@@ -21,6 +21,10 @@ const char* mqtt_user_name = "mqtt";
 const char* mqtt_user_pass = "mqttpass";
 const char mqtt_error_topic[100] = "ecoforest/error";
 
+const char* online_topic = "ecoforest/esp_running";
+uint32_t online_period = 60ul * 1000ul;
+uint32_t online_timer = online_period + 1ul;
+
 // Declare wifi and mqtt target
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -61,7 +65,7 @@ struct ReadMBRegister
   uint16_t addr; // Modbus address
   uint32_t period_ms; // Reading period of the variable in milliseconds
   uint32_t timer_ms; // Timer for the reading period
-  uint16_t old; // Old value of the variable
+  String old; // Old value of the variable
 };
 
 // Create the ModBus write array
@@ -81,65 +85,65 @@ WriteMBRegister write_list[WRITE_NUM] =
 static const uint8_t READ_NUM = 59u;
 ReadMBRegister read_list[READ_NUM] =
 {
-  {READ_HOLDING, "ecoforest/temperatura_exterior", 11u, 10ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_impulsion_pozos", 1u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_retorno_de_pozos", 2u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_impulsion_calefaccion", 3u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_retorno_de_calefaccion", 4u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_aspiracion_del_compresor", 5u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/presion_de_aspiracion_del_compresor", 6u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/presion_de_descarga_del_compresor", 7u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_de_acs", 8u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/presion_circuito_de_pozos", 13u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/presion_circuito_de_calefaccion", 14u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/cop", 30u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/pf", 31u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_de_condensacion", 94u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/grado_de_recalentamiento", 132u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/posicion_de_valvula_de_expansion", 133u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_impulsion_sg2", 194u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_impulsion_sg3", 195u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_impulsion_sg4", 196u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_evaporacion", 199u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/eer", 202u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_descarga_compresor", 203u, 30ul * 1000ul, 0ul, 0u},
-  {READ_COIL, "ecoforest/alarma", 50u, 10ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/horas_funcionamiento_l", 79u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_enero", 143u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_febrero", 144u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_marzo", 145u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_abril", 146u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_mayo", 147u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_junio", 148u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_julio", 149u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_agosto", 150u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_septiembre", 151u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_octubre", 152u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_noviembre", 153u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_diciembre", 154u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_enero", 167u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_febrero", 168u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_marzo", 169u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_abril", 170u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_mayo", 171u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_junio", 172u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_julio", 173u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_agosto", 174u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_septiembre", 175u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_octubre", 176u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_noviembre", 177u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_diciembre", 178u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/contador_arranques_l", 280u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/rpm_compresor", 1u + 5001u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/temperatura_inverter", 4u + 5001u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/consumo_electrico", 81u + 5001u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/potencia_condensacion", 82u + 5001u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/potencia_evaporacion", 184u + 5001u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/demanda_acs_bus", 221u + 5001u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/demanda_z1_bus", 223u + 5001u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/demanda_z2_bus", 224u + 5001u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/demanda_z3_bus", 225u + 5001u, 30ul * 1000ul, 0ul, 0u},
-  {READ_HOLDING, "ecoforest/demanda_z4_bus", 226u + 5001u, 30ul * 1000ul, 0ul, 0u}
+  {READ_HOLDING, "ecoforest/temperatura_exterior", 11u, 10ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_impulsion_pozos", 1u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_retorno_de_pozos", 2u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_impulsion_calefaccion", 3u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_retorno_de_calefaccion", 4u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_aspiracion_del_compresor", 5u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/presion_de_aspiracion_del_compresor", 6u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/presion_de_descarga_del_compresor", 7u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_de_acs", 8u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/presion_circuito_de_pozos", 13u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/presion_circuito_de_calefaccion", 14u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/cop", 30u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/pf", 31u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_de_condensacion", 94u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/grado_de_recalentamiento", 132u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/posicion_de_valvula_de_expansion", 133u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_impulsion_sg2", 194u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_impulsion_sg3", 195u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_impulsion_sg4", 196u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_evaporacion", 199u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/eer", 202u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_descarga_compresor", 203u, 30ul * 1000ul, 0ul, ""},
+  {READ_COIL, "ecoforest/alarma", 50u, 10ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/horas_funcionamiento_l", 79u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_enero", 143u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_febrero", 144u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_marzo", 145u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_abril", 146u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_mayo", 147u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_junio", 148u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_julio", 149u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_agosto", 150u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_septiembre", 151u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_octubre", 152u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_noviembre", 153u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_de_condensacion_diciembre", 154u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_enero", 167u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_febrero", 168u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_marzo", 169u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_abril", 170u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_mayo", 171u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_junio", 172u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_julio", 173u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_agosto", 174u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_septiembre", 175u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_octubre", 176u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_noviembre", 177u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/energia_electrica_consumida_diciembre", 178u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/contador_arranques_l", 280u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/rpm_compresor", 1u + 5001u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/temperatura_inverter", 4u + 5001u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/consumo_electrico", 81u + 5001u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/potencia_condensacion", 82u + 5001u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/potencia_evaporacion", 184u + 5001u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/demanda_acs_bus", 221u + 5001u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/demanda_z1_bus", 223u + 5001u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/demanda_z2_bus", 224u + 5001u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/demanda_z3_bus", 225u + 5001u, 30ul * 1000ul, 0ul, ""},
+  {READ_HOLDING, "ecoforest/demanda_z4_bus", 226u + 5001u, 30ul * 1000ul, 0ul, ""}
 };
 
 void setup()
@@ -168,6 +172,16 @@ void loop()
   // Manage mqtt callbacks
   client.loop();
 
+  // Publish the online topic
+  if (millis() - online_timer >= online_period)
+  {
+    Serial.println("Publish online topic");
+    bool success = client.publish(online_topic, "online");
+    if (success) {Serial.println("Message Published");}
+    else {Serial.println("Publish failed");}
+    online_timer = millis();
+  }
+
   // Publish all mqtt sensor topics
   for (uint8_t i = 0; i < READ_NUM; i++)
   {
@@ -189,14 +203,23 @@ void loop()
       {
         for (uint8_t j = 0; j < 100; j++) {mqtt_topic[j] = mqtt_error_topic[j];}
       }
-      
-      Serial.print("Publish on ");
-      Serial.print(mqtt_topic);
-      Serial.print(": ");
-      Serial.println(mqtt_payload.c_str());
-      bool success = client.publish(mqtt_topic, mqtt_payload.c_str());
-      if (success) {Serial.println("Message Published");}
-      else {Serial.println("Publish failed");}
+
+      if (!refresh && mqtt_payload == read_list[i].old)
+      {
+        Serial.println("Same content, don't publish");
+      }
+      else
+      {
+        Serial.print("Publish on ");
+        Serial.print(mqtt_topic);
+        Serial.print(": ");
+        Serial.println(mqtt_payload.c_str());
+        bool success = client.publish(mqtt_topic, mqtt_payload.c_str());
+        if (success) {Serial.println("Message Published");}
+        else {Serial.println("Publish failed");}
+      }
+
+      read_list[i].old = mqtt_payload;
 
       // Update the timer for the next message
       if (valid) {read_list[i].timer_ms = millis();}
@@ -250,7 +273,7 @@ uint8_t waitResponse(uint8_t* response_data)
   return i;
 }
 
-bool readRegister(const ReadMBRegister& reg, String& mqtt_payload)
+bool readRegister(ReadMBRegister& reg, String& mqtt_payload)
 {
   Serial.print("Read modbus for ");
   Serial.println(reg.reg_name);
@@ -310,7 +333,7 @@ bool readRegister(const ReadMBRegister& reg, String& mqtt_payload)
     uint16_t response_value;
     if (reg.fnc == READ_COIL) {response_value = response_data[3];}
     else {response_value = ((uint16_t(response_data[3])<<8) + response_data[4]);}
-    mqtt_payload += String(response_value);
+    mqtt_payload = String(response_value);
   }
 
   else
@@ -434,6 +457,7 @@ void setup_wifi()
 
   while (WiFi.status() != WL_CONNECTED)
   {
+    WiFi.disconnect(true);
     WiFi.begin(ssid, password);
     delay(500);
     Serial.print(".");
