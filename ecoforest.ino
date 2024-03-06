@@ -21,10 +21,6 @@ const char* mqtt_user_name = "mqtt";
 const char* mqtt_user_pass = "mqttpass";
 const char mqtt_error_topic[100] = "ecoforest/error";
 
-const char* online_topic = "ecoforest/esp_running";
-uint32_t online_period = 60ul * 1000ul;
-uint32_t online_timer = online_period + 1ul;
-
 // Declare wifi and mqtt target
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -51,99 +47,162 @@ bool refresh = true;
 
 // Create the data structures for the ModBus interactions
 
-struct WriteMBRegister
+struct ModBusRegister
 {
   uint8_t fnc; // Modbus function code to read
   char reg_name[100]; // MQTT topic name
   uint16_t addr; // Modbus address
 };
 
-struct ReadMBRegister
+struct SyncRegisters
 {
-  uint8_t fnc; // Modbus function code to read
-  char reg_name[100]; // MQTT topic name
-  uint16_t addr; // Modbus address
-  uint32_t period_ms; // Reading period of the variable in milliseconds
-  uint32_t timer_ms; // Timer for the reading period
-  String old; // Old value of the variable
+  uint32_t period_ms; // Period of the synchronized data read
+  uint32_t timer_ms; // Timer to wait for the period
+  uint8_t num_registers; // Number of registers to read
+  char topic[100]; // Topic to publish the mqtt message
+  ModBusRegister list[100]; // List of registers to read
 };
 
 // Create the ModBus write array
-static const uint8_t WRITE_NUM = 7u;
-WriteMBRegister write_list[WRITE_NUM] =
+static const uint8_t WRITE_NUM = 18u;
+ModBusRegister write_list[WRITE_NUM] =
 {
-  {WRITE_HOLDING, "ecoforest/working_program_by_bus_in", 5221u},
-  {WRITE_HOLDING, "ecoforest/bus_dhw_demand_in", 5222u},
-  {WRITE_HOLDING, "ecoforest/bus_dg1_demand_in", 5224u},
-  {WRITE_HOLDING, "ecoforest/bus_sg2_demand_in", 5225u},
-  {WRITE_HOLDING, "ecoforest/bus_sg3_demand_in", 5226u},
-  {WRITE_HOLDING, "ecoforest/bus_sg4_demand_in", 5227u},
-  {WRITE_COIL, "ecoforest/on_off_control_by_bus_in", 53u}
+  {WRITE_HOLDING, "ecoforest/bus_dhw_setpoint", 134u},
+  {WRITE_HOLDING, "ecoforest/bus_heating_dg1_setpoint", 135u},
+  {WRITE_HOLDING, "ecoforest/bus_heating_sg2_setpoint", 136u},
+  {WRITE_HOLDING, "ecoforest/bus_heating_sg3_setpoint", 137u},
+  {WRITE_HOLDING, "ecoforest/bus_heating_sg4_setpoint", 138u},
+  {WRITE_HOLDING, "ecoforest/bus_cooling_dg1_setpoint", 139u},
+  {WRITE_HOLDING, "ecoforest/bus_cooling_sg2_setpoint", 140u},
+  {WRITE_HOLDING, "ecoforest/bus_cooling_sg3_setpoint", 141u},
+  {WRITE_HOLDING, "ecoforest/bus_cooling_sg4_setpoint", 142u},
+  {WRITE_HOLDING, "ecoforest/bus_pool_setpoint", 143u},
+  {WRITE_HOLDING, "ecoforest/working_program_by_bus", 5221u},
+  {WRITE_HOLDING, "ecoforest/bus_dhw_demand", 5222u},
+  {WRITE_HOLDING, "ecoforest/bus_pool_demand", 5223u},
+  {WRITE_HOLDING, "ecoforest/bus_dg1_demand", 5224u},
+  {WRITE_HOLDING, "ecoforest/bus_sg2_demand", 5225u},
+  {WRITE_HOLDING, "ecoforest/bus_sg3_demand", 5226u},
+  {WRITE_HOLDING, "ecoforest/bus_sg4_demand", 5227u},
+  {WRITE_COIL, "ecoforest/on_off_control_by_bus", 53u}
 };
 
 // Create the ModBus read array
-static const uint8_t READ_NUM = 59u;
-ReadMBRegister read_list[READ_NUM] =
+static const uint8_t SYNC_NUM = 3u;
+SyncRegisters sync_list[SYNC_NUM] =
 {
-  {READ_HOLDING, "ecoforest/temperatura_exterior", 11u, 10ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_impulsion_pozos", 1u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_retorno_de_pozos", 2u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_impulsion_calefaccion", 3u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_retorno_de_calefaccion", 4u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_aspiracion_del_compresor", 5u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/presion_de_aspiracion_del_compresor", 6u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/presion_de_descarga_del_compresor", 7u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_de_acs", 8u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/presion_circuito_de_pozos", 13u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/presion_circuito_de_calefaccion", 14u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/cop", 30u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/pf", 31u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_de_condensacion", 94u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/grado_de_recalentamiento", 132u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/posicion_de_valvula_de_expansion", 133u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_impulsion_sg2", 194u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_impulsion_sg3", 195u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_impulsion_sg4", 196u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_evaporacion", 199u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/eer", 202u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_descarga_compresor", 203u, 30ul * 1000ul, 0ul, ""},
-  {READ_COIL, "ecoforest/alarma", 50u, 10ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/horas_funcionamiento_l", 79u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_enero", 143u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_febrero", 144u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_marzo", 145u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_abril", 146u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_mayo", 147u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_junio", 148u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_julio", 149u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_agosto", 150u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_septiembre", 151u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_octubre", 152u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_noviembre", 153u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_de_condensacion_diciembre", 154u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_enero", 167u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_febrero", 168u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_marzo", 169u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_abril", 170u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_mayo", 171u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_junio", 172u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_julio", 173u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_agosto", 174u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_septiembre", 175u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_octubre", 176u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_noviembre", 177u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/energia_electrica_consumida_diciembre", 178u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/contador_arranques_l", 280u + 5001u, 1ul * 24ul * 60ul * 60ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/rpm_compresor", 1u + 5001u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/temperatura_inverter", 4u + 5001u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/consumo_electrico", 81u + 5001u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/potencia_condensacion", 82u + 5001u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/potencia_evaporacion", 184u + 5001u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/demanda_acs_bus", 221u + 5001u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/demanda_z1_bus", 223u + 5001u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/demanda_z2_bus", 224u + 5001u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/demanda_z3_bus", 225u + 5001u, 30ul * 1000ul, 0ul, ""},
-  {READ_HOLDING, "ecoforest/demanda_z4_bus", 226u + 5001u, 30ul * 1000ul, 0ul, ""}
+  // One second synchronized registers (1)
+  {10000ul, 0ul, 49u, "ecoforest/10_second",
+    {
+      {READ_HOLDING, "brine_temp_out", 1u},
+      {READ_HOLDING, "brine_temp_in", 2u},
+      {READ_HOLDING, "heating_temp_out", 3u},
+      {READ_HOLDING, "heating_temp_in", 4u},
+      {READ_HOLDING, "compressor_suction_temperature", 5u},
+      {READ_HOLDING, "compresor_suction_pressure", 6u},
+      {READ_HOLDING, "compressor_discharge_pressure", 7u},
+      {READ_HOLDING, "dhw_temperature", 8u},
+      {READ_HOLDING, "outdoor_temperature", 11u},
+      {READ_HOLDING, "brine_circuit_pressure", 13u},
+      {READ_HOLDING, "heating_circuit_pressure", 14u},
+      {READ_HOLDING, "brine_temp_air_unit_outlet", 29u},
+      {READ_HOLDING, "cop", 30u},
+      {READ_HOLDING, "pf", 31u},
+      {READ_HOLDING, "condensation_temperature", 94u},
+      {READ_HOLDING, "superheat", 132u},
+      {READ_HOLDING, "expansion_valve_position", 133u},
+      {READ_HOLDING, "bus_dhw_setpoint", 134u},
+      {READ_HOLDING, "bus_pool_setpoint", 143u},
+      {READ_HOLDING, "supply_temperature_sg2", 194u},
+      {READ_HOLDING, "supply_temperature_sg3", 195u},
+      {READ_HOLDING, "supply_temperature_sg4", 196u},
+      {READ_HOLDING, "start_temperature_for_dhw", 198u},
+      {READ_HOLDING, "evaporation_temperature", 199u},
+      {READ_HOLDING, "heating_buffer_tank_temperature", 200u},
+      {READ_HOLDING, "cooling_buffer_tank_temperature", 201u},
+      {READ_HOLDING, "eer", 202u},
+      {READ_HOLDING, "compresor_discharge_temperature", 203u},
+      {READ_HOLDING, "compressor_rpm", 5002u},
+      {READ_HOLDING, "scroll_temp", 5004u},
+      {READ_HOLDING, "inverter_temperature", 5005u},
+      {READ_HOLDING, "working_hours_l", 5080u},
+      {READ_HOLDING, "working_hours_h", 5081u},
+      {READ_HOLDING, "power_consumption", 5082u},
+      {READ_HOLDING, "condensation_capacity", 5083u},
+      {READ_HOLDING, "evaporation_capacity", 5185u},
+      {READ_HOLDING, "working_program_by_bus", 5221u},
+      {READ_HOLDING, "bus_dhw_demand", 5222u},
+      {READ_HOLDING, "bus_pool_demand", 5223u},
+      {READ_HOLDING, "bus_dg1_demand", 5224u},
+      {READ_HOLDING, "bus_sg2_demand", 5225u},
+      {READ_HOLDING, "bus_sg3_demand", 5226u},
+      {READ_HOLDING, "bus_sg4_demand", 5227u},
+      {READ_HOLDING, "number_of_starts_l", 5281u},
+      {READ_HOLDING, "number_of_starts_h", 5282u},
+      {READ_COIL, "active_alarm", 50u},
+      {READ_COIL, "on_off_control_by_bus", 53u},
+      {READ_COIL, "summer", 127u},
+      {READ_COIL, "winter", 128u}
+    }
+  },
+
+  // One month synchronized registers (2)
+  {24ul * 60ul * 60ul * 1000ul, 0ul, 39u, "ecoforest/1_day",
+    {
+      {READ_HOLDING, "condensation_energy_january", 5144u},
+      {READ_HOLDING, "condensation_energy_february", 5145u},
+      {READ_HOLDING, "condensation_energy_march", 5146u},
+      {READ_HOLDING, "condensation_energy_april", 5147u},
+      {READ_HOLDING, "condensation_energy_may", 5148u},
+      {READ_HOLDING, "condensation_energy_june", 5149u},
+      {READ_HOLDING, "condensation_energy_july", 5150u},
+      {READ_HOLDING, "condensation_energy_august", 5151u},
+      {READ_HOLDING, "condensation_energy_september", 5152u},
+      {READ_HOLDING, "condensation_energy_october", 5153u},
+      {READ_HOLDING, "condensation_energy_november", 5154u},
+      {READ_HOLDING, "condensation_energy_december", 5155u},
+      {READ_HOLDING, "evaporation_energy_january", 5156u},
+      {READ_HOLDING, "evaporation_energy_february", 5157u},
+      {READ_HOLDING, "evaporation_energy_march", 5158u},
+      {READ_HOLDING, "evaporation_energy_april", 5159u},
+      {READ_HOLDING, "evaporation_energy_may", 5160u},
+      {READ_HOLDING, "evaporation_energy_june", 5161u},
+      {READ_HOLDING, "evaporation_energy_july", 5162u},
+      {READ_HOLDING, "evaporation_energy_august", 5163u},
+      {READ_HOLDING, "evaporation_energy_september", 5164u},
+      {READ_HOLDING, "evaporation_energy_october", 5165u},
+      {READ_HOLDING, "evaporation_energy_november", 5166u},
+      {READ_HOLDING, "evaporation_energy_december", 5167u},
+      {READ_HOLDING, "electrical_consumption_january", 5168u},
+      {READ_HOLDING, "electrical_consumption_february", 5169u},
+      {READ_HOLDING, "electrical_consumption_march", 5170u},
+      {READ_HOLDING, "electrical_consumption_april", 5171u},
+      {READ_HOLDING, "electrical_consumption_may", 5172u},
+      {READ_HOLDING, "electrical_consumption_june", 5173u},
+      {READ_HOLDING, "electrical_consumption_july", 5174u},
+      {READ_HOLDING, "electrical_consumption_august", 5175u},
+      {READ_HOLDING, "electrical_consumption_september", 5176u},
+      {READ_HOLDING, "electrical_consumption_october", 5177u},
+      {READ_HOLDING, "electrical_consumption_november", 5178u},
+      {READ_HOLDING, "electrical_consumption_december", 5179u},
+      {READ_HOLDING, "software_version_1", 5285u},
+      {READ_HOLDING, "software_version_2", 5286u},
+      {READ_HOLDING, "software_version_3", 5287u}
+    }
+  },
+
+  {60ul * 60ul * 1000ul, 0ul, 8u, "ecoforest/1_hour",
+    {
+      {READ_HOLDING, "bus_heating_dg1_setpoint", 135u},
+      {READ_HOLDING, "bus_heating_sg2_setpoint", 136u},
+      {READ_HOLDING, "bus_heating_sg3_setpoint", 137u},
+      {READ_HOLDING, "bus_heating_sg4_setpoint", 138u},
+      {READ_HOLDING, "bus_cooling_dg1_setpoint", 139u},
+      {READ_HOLDING, "bus_cooling_sg2_setpoint", 140u},
+      {READ_HOLDING, "bus_cooling_sg3_setpoint", 141u},
+      {READ_HOLDING, "bus_cooling_sg4_setpoint", 142u}
+    }
+  }
 };
 
 void setup()
@@ -165,64 +224,52 @@ void loop()
 {
   // Check the wifi connection and reconnect
   if (WiFi.status() != WL_CONNECTED) {setup_wifi();}
-  
+	
   // Check the connection with the mqtt server and reconnect if needed
   if (!client.connected()) {reconnect();}
 
   // Manage mqtt callbacks
   client.loop();
 
-  // Publish the online topic
-  if (millis() - online_timer >= online_period)
-  {
-    Serial.println("Publish online topic");
-    bool success = client.publish(online_topic, "online");
-    if (success) {Serial.println("Message Published");}
-    else {Serial.println("Publish failed");}
-    online_timer = millis();
-  }
-
   // Publish all mqtt sensor topics
-  for (uint8_t i = 0; i < READ_NUM; i++)
+  for (uint8_t i = 0; i < SYNC_NUM; i++)
   {
-    if (millis() - read_list[i].timer_ms >= read_list[i].period_ms || refresh)
+    if (millis() - sync_list[i].timer_ms >= sync_list[i].period_ms || refresh)
     { 
-      String mqtt_payload;
+      String mqtt_payload = "{";
       bool valid = true;
       
-      // Read the modbus registers and form the mqtt message
-      valid = readRegister(read_list[i], mqtt_payload);
+      for (uint8_t j = 0; valid && (j < sync_list[i].num_registers); j++)
+      {
+        if (j != 0) {mqtt_payload += ", ";}
+        
+        // Read the modbus registers and form the mqtt message
+        valid = readRegister(sync_list[i].list[j], mqtt_payload);
+      }
+      
+      mqtt_payload += "}";
 
       // Publish the mqtt message
       char mqtt_topic[100];
       if (valid)
       {
-        for (uint8_t j = 0; j < 100; j++) {mqtt_topic[j] = read_list[i].reg_name[j];}
+        for (uint8_t j = 0; j < 100; j++) {mqtt_topic[j] = sync_list[i].topic[j];}
       }
       else
       {
         for (uint8_t j = 0; j < 100; j++) {mqtt_topic[j] = mqtt_error_topic[j];}
       }
-
-      if (!refresh && mqtt_payload == read_list[i].old)
-      {
-        Serial.println("Same content, don't publish");
-      }
-      else
-      {
-        Serial.print("Publish on ");
-        Serial.print(mqtt_topic);
-        Serial.print(": ");
-        Serial.println(mqtt_payload.c_str());
-        bool success = client.publish(mqtt_topic, mqtt_payload.c_str());
-        if (success) {Serial.println("Message Published");}
-        else {Serial.println("Publish failed");}
-      }
-
-      read_list[i].old = mqtt_payload;
+      
+      Serial.print("Publish on ");
+      Serial.print(mqtt_topic);
+      Serial.print(": ");
+      Serial.println(mqtt_payload.c_str());
+      bool success = client.publish(mqtt_topic, mqtt_payload.c_str());
+      if (success) {Serial.println("Message Published");}
+      else {Serial.println("Publish failed");}
 
       // Update the timer for the next message
-      if (valid) {read_list[i].timer_ms = millis();}
+      if (valid) {sync_list[i].timer_ms = millis();}
     }
   }
 
@@ -273,7 +320,7 @@ uint8_t waitResponse(uint8_t* response_data)
   return i;
 }
 
-bool readRegister(ReadMBRegister& reg, String& mqtt_payload)
+bool readRegister(const ModBusRegister& reg, String& mqtt_payload)
 {
   Serial.print("Read modbus for ");
   Serial.println(reg.reg_name);
@@ -333,7 +380,7 @@ bool readRegister(ReadMBRegister& reg, String& mqtt_payload)
     uint16_t response_value;
     if (reg.fnc == READ_COIL) {response_value = response_data[3];}
     else {response_value = ((uint16_t(response_data[3])<<8) + response_data[4]);}
-    mqtt_payload = String(response_value);
+    mqtt_payload += String("\"") + String(reg.reg_name) + "\": " + String(response_value);
   }
 
   else
@@ -457,7 +504,6 @@ void setup_wifi()
 
   while (WiFi.status() != WL_CONNECTED)
   {
-    WiFi.disconnect(true);
     WiFi.begin(ssid, password);
     delay(500);
     Serial.print(".");
